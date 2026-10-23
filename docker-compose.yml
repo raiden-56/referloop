@@ -1,0 +1,58 @@
+# Local development services. The app itself runs on the host with `npm run dev`;
+# use the `app` profile to run the production image locally:
+#   docker compose --profile app up --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: referloop
+      POSTGRES_PASSWORD: referloop
+      POSTGRES_DB: referloop
+    ports:
+      - "5442:5432"
+    volumes:
+      - referloop-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U referloop -d referloop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Captures all outgoing development email. Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  app:
+    profiles: ["app"]
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://referloop:referloop@db:5432/referloop?schema=public
+      APP_URL: http://localhost:4000
+      CORS_ORIGINS: http://localhost:4000
+      # Plain HTTP on localhost: browsers drop Secure cookies over http, so disable for this demo profile only.
+      COOKIE_SECURE: "false"
+      EMAIL_TRANSPORT: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+      EMAIL_FROM: "ReferLoop <no-reply@referloop.local>"
+      # Demo value only. Generate a random secret for any real deployment.
+      SESSION_SECRET: local-demo-profile-secret-0f3c9a7e2b5d4c1a8e6f
+    ports:
+      - "4000:4000"
+
+volumes:
+  referloop-pgdata:

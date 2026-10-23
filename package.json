@@ -1,0 +1,41 @@
+{
+  "name": "referloop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ReferLoop — employee referral and job sharing platform",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build:shared": "npm run build -w @referloop/shared",
+    "postinstall": "npm run build:shared && npm run prisma:generate -w @referloop/api",
+    "dev": "concurrently -k -n shared,api,web -c gray,blue,magenta \"npm run dev -w @referloop/shared\" \"npm run dev -w @referloop/api\" \"npm run dev -w @referloop/web\"",
+    "build": "npm run build:shared && npm run build -w @referloop/api && npm run build -w @referloop/web",
+    "start": "npm run start -w @referloop/api",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "db:up": "docker compose up -d db mailpit",
+    "db:migrate": "npm run prisma:migrate -w @referloop/api",
+    "db:seed": "npm run prisma:seed -w @referloop/api",
+    "db:reset": "npm run prisma:reset -w @referloop/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.4.0",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.43.0"
+  }
+}

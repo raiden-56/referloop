@@ -1,0 +1,418 @@
+// ReferLoop data model. Records referenced by audit history are never hard-deleted:
+// users are suspended, jobs are closed or archived.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum JobStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  TEMPORARY
+}
+
+enum JobHistoryAction {
+  CREATED
+  UPDATED
+  CLOSED
+  REOPENED
+  CONFIRMED_ACTIVE
+  ARCHIVED
+  RESTORED
+  REVERTED
+}
+
+enum ReportReason {
+  CLOSED_OR_OUTDATED
+  DUPLICATE
+  INCORRECT_INFO
+  BROKEN_LINK
+  SPAM
+  SUSPICIOUS
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  ESCALATED
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  JOB_EDITED
+  JOB_CLOSED
+  JOB_REOPENED
+  JOB_ARCHIVED
+  REPORT_RESOLVED
+  ACCOUNT
+  REFERRAL_REQUESTED
+  REFERRAL_UPDATED
+}
+
+enum ReferralStatus {
+  PENDING
+  ACCEPTED
+  REFERRED
+  DECLINED
+  WITHDRAWN
+}
+
+model User {
+  id                String        @id @default(uuid()) @db.Uuid
+  name              String
+  email             String        @unique
+  passwordHash      String
+  role              Role          @default(MEMBER)
+  accountStatus     AccountStatus @default(ACTIVE)
+  emailVerifiedAt   DateTime?
+  companyName       String?
+  jobTitle          String?
+  failedLoginCount  Int           @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  suspendedAt       DateTime?
+  suspensionReason  String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  sessions                UserSession[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  jobsCreated             Job[]                    @relation("JobCreator")
+  jobsLastEdited          Job[]                    @relation("JobLastEditor")
+  jobsArchived            Job[]                    @relation("JobArchiver")
+  jobEdits                JobEditHistory[]
+  jobStatusChanges        JobStatusHistory[]
+  reportsFiled            JobReport[]              @relation("ReportReporter")
+  reportsResolved         JobReport[]              @relation("ReportResolver")
+  savedJobs               SavedJob[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]
+  settingsUpdates         AppSetting[]
+  referralsRequested      ReferralRequest[]        @relation("ReferralRequester")
+  referralsReceived       ReferralRequest[]        @relation("ReferralReferrer")
+
+  @@index([role])
+  @@index([accountStatus])
+  @@index([createdAt])
+  @@map("users")
+}
+
+/// Server-managed session. Only a SHA-256 hash of the cookie token is stored.
+model UserSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  ipAddress  String?
+  userAgent  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model JobCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@map("job_categories")
+}
+
+model Job {
+  id                   String         @id @default(uuid()) @db.Uuid
+  slug                 String         @unique
+  title                String
+  companyName          String
+  categoryId           String?        @db.Uuid
+  department           String?
+  location             String?
+  workMode             WorkMode
+  employmentType       EmploymentType
+  experienceMin        Int?
+  experienceMax        Int?
+  salaryMin            Int?
+  salaryMax            Int?
+  salaryCurrency       String?        @db.VarChar(3)
+  numberOfOpenings     Int?
+  summary              String
+  description          String
+  responsibilities     String?
+  requiredSkills       String[]
+  preferredSkills      String[]
+  /// Lower-cased union of required and preferred skills, used for filtering and search.
+  skillsNormalized     String[]
+  eligibility          String?
+  referralAvailable    Boolean        @default(false)
+  posterCanRefer       Boolean        @default(false)
+  referralInstructions String?
+  applicationUrl       String?
+  recruiterUrl         String?
+  applicantNotes       String?
+  applicationDeadline  DateTime?      @db.Date
+  status               JobStatus      @default(ACTIVE)
+  statusChangedAt      DateTime       @default(now())
+  /// Last time a member explicitly confirmed the listing is still active.
+  statusConfirmedAt    DateTime?
+  /// Optimistic-concurrency version, incremented on every write.
+  version              Int            @default(1)
+  /// Client-generated key that makes job creation idempotent per creator.
+  submissionKey        String?        @unique
+  createdById          String         @db.Uuid
+  lastEditedById       String?        @db.Uuid
+  archivedAt           DateTime?
+  archivedById         String?        @db.Uuid
+  archiveReason        String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  category      JobCategory?       @relation(fields: [categoryId], references: [id])
+  createdBy     User               @relation("JobCreator", fields: [createdById], references: [id])
+  lastEditedBy  User?              @relation("JobLastEditor", fields: [lastEditedById], references: [id])
+  archivedBy    User?              @relation("JobArchiver", fields: [archivedById], references: [id])
+  editHistory   JobEditHistory[]
+  statusHistory JobStatusHistory[]
+  reports       JobReport[]
+  savedBy       SavedJob[]
+  referrals     ReferralRequest[]
+
+  @@index([status, archivedAt, createdAt(sort: Desc)])
+  @@index([status, archivedAt, updatedAt(sort: Desc)])
+  @@index([companyName])
+  @@index([categoryId])
+  @@index([workMode])
+  @@index([employmentType])
+  @@index([createdById])
+  @@index([lastEditedById])
+  @@index([skillsNormalized], type: Gin)
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_title_trgm_idx")
+  @@index([companyName(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_company_trgm_idx")
+  @@index([location(ops: raw("gin_trgm_ops"))], type: Gin, map: "jobs_location_trgm_idx")
+  @@map("jobs")
+}
+
+/// Append-only log of every job change. Never updated or deleted by the application.
+model JobEditHistory {
+  id             String           @id @default(uuid()) @db.Uuid
+  jobId          String           @db.Uuid
+  actorId        String           @db.Uuid
+  action         JobHistoryAction
+  changedFields  String[]
+  previousValues Json?
+  newValues      Json?
+  reason         String?
+  /// Job version after this action was applied.
+  version        Int
+  createdAt      DateTime         @default(now())
+
+  job   Job  @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([jobId, createdAt])
+  @@index([actorId])
+  @@map("job_edit_history")
+}
+
+model JobStatusHistory {
+  id             String     @id @default(uuid()) @db.Uuid
+  jobId          String     @db.Uuid
+  actorId        String     @db.Uuid
+  previousStatus JobStatus?
+  newStatus      JobStatus
+  reason         String?
+  createdAt      DateTime   @default(now())
+
+  job   Job  @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([jobId, createdAt])
+  @@map("job_status_history")
+}
+
+model JobReport {
+  id             String       @id @default(uuid()) @db.Uuid
+  jobId          String       @db.Uuid
+  reporterId     String       @db.Uuid
+  reason         ReportReason
+  description    String?
+  status         ReportStatus @default(OPEN)
+  resolvedById   String?      @db.Uuid
+  resolutionNote String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  escalatedAt    DateTime?
+  resolvedAt     DateTime?
+
+  job        Job   @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  reporter   User  @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  resolvedBy User? @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([jobId, status])
+  @@index([reporterId, jobId, status])
+  @@map("job_reports")
+}
+
+model SavedJob {
+  userId    String   @db.Uuid
+  jobId     String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([userId, jobId])
+  @@index([jobId])
+  @@map("saved_jobs")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+/// Administrative and security-sensitive operations (logins, suspensions, role changes, moderation...).
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+/// Single-row application settings table (id is always 1).
+model AppSetting {
+  id                         Int      @id @default(1)
+  publicBrowsingEnabled      Boolean  @default(true)
+  registrationEnabled        Boolean  @default(true)
+  allowedEmailDomains        String[] @default([])
+  staleAfterDays             Int      @default(30)
+  notifyCreatorOnEdit        Boolean  @default(true)
+  notifySaversOnStatusChange Boolean  @default(true)
+  notifyReporterOnResolution Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
+  updatedById                String?  @db.Uuid
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
+
+  @@map("app_settings")
+}
+
+/// A member asking a job's poster for a referral. The requester's email is shared with the referrer only.
+model ReferralRequest {
+  id           String         @id @default(uuid()) @db.Uuid
+  jobId        String         @db.Uuid
+  requesterId  String         @db.Uuid
+  referrerId   String         @db.Uuid
+  status       ReferralStatus @default(PENDING)
+  message      String
+  profileUrl   String?
+  responseNote String?
+  respondedAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  job       Job  @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  requester User @relation("ReferralRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  referrer  User @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Restrict)
+
+  @@index([referrerId, status, createdAt(sort: Desc)])
+  @@index([requesterId, createdAt(sort: Desc)])
+  @@index([jobId, requesterId, status])
+  @@map("referral_requests")
+}

@@ -1,0 +1,52 @@
+{
+  "name": "@referloop/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:reset": "prisma migrate reset --force && tsx prisma/seed.ts",
+    "prisma:studio": "prisma studio",
+    "e2e:prepare": "tsx scripts/prepare-e2e-db.ts",
+    "start:e2e": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.0.0",
+    "@prisma/client": "^7.0.0",
+    "@referloop/shared": "*",
+    "argon2": "^0.44.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "nodemailer": "^7.0.6",
+    "pino": "^9.9.0",
+    "pino-http": "^10.5.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@types/nodemailer": "^7.0.1",
+    "@types/supertest": "^6.0.3",
+    "pino-pretty": "^13.1.1",
+    "prisma": "^7.0.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "vitest": "^3.2.4"
+  }
+}
