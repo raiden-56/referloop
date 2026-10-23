@@ -1,0 +1,37 @@
+# Netlify hosts only the React app (apps/web). The API is a long-running Express + PostgreSQL
+# server, so deploy it separately (Render, Railway, Fly.io… the Dockerfile works as-is) and
+# proxy /api to it below. Proxying keeps cookies first-party, so sessions and CSRF work unchanged.
+
+[build]
+  # npm ci also runs the root postinstall (builds packages/shared, generates the Prisma client).
+  command = "npm run build -w @referloop/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# TODO: replace https://YOUR-API-HOST with your deployed API's origin (no trailing slash).
+[[redirects]]
+  from = "/api/*"
+  to = "https://YOUR-API-HOST/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app: let React Router handle every other path.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Same policy the API applies when it serves the app itself (see apps/api/src/app.ts).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

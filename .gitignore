@@ -9,3 +9,7 @@ playwright-report/
 test-results/
 *.log
 .DS_Store
+
+# This is an npm workspace: other package managers ignore "workspaces" and break installs (e.g. on Netlify).
+pnpm-lock.yaml
+yarn.lock

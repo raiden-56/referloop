@@ -55,6 +55,19 @@ npm run prisma:deploy -w @referloop/api         # apply migrations
 NODE_ENV=production node apps/api/dist/index.js # or use a process manager (systemd, pm2)
 ```
 
+## Option C: web on Netlify, API elsewhere
+
+Netlify serves static sites only, so it can host the React app but not the API or database. `netlify.toml` builds `apps/web` and proxies `/api/*` to the API, so the browser still sees a single origin and cookies stay first-party.
+
+1. Deploy the API and PostgreSQL to a Node host (Render, Railway, Fly.io…) using Option A or B, with these settings:
+   - `SERVE_WEB=false`
+   - `APP_URL` and `CORS_ORIGINS` set to the **Netlify** URL, e.g. `https://referloop.netlify.app`
+   - `TRUST_PROXY=2` (Netlify's proxy plus the host's load balancer)
+2. In `netlify.toml`, replace `https://YOUR-API-HOST` with the API's origin.
+3. Create the Netlify site from the repository. Build settings come from `netlify.toml`, so leave them empty in the UI.
+
+Install with **npm** only. pnpm and Yarn ignore the `workspaces` field, skip the workspace packages' dependencies, and then fail to build `packages/shared` (`Cannot find module 'zod'`). Netlify picks the package manager from the lockfile, so never commit a `pnpm-lock.yaml` or `yarn.lock`.
+
 ## Release checklist
 
 1. Back up the database.
